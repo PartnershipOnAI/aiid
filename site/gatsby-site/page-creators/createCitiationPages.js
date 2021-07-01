@@ -8,6 +8,26 @@ const createCitiationPages = (graphql, createPage) => {
           query IncidentIDs {
             allMongodbAiidprodIncidents {
               distinct(field: incident_id)
+              group(field: incident_id) {
+                fieldValue
+                edges {
+                  node {
+                    id
+                    submitters
+                    incident_date
+                    date_published
+                    incident_id
+                    report_number
+                    title
+                    url
+                    image_url
+                    source_domain
+                    mongodb_id
+                    text
+                    authors
+                  }
+                }
+              }
             }
             allMongodbAiidprodDuplicates {
               nodes {
@@ -23,13 +43,19 @@ const createCitiationPages = (graphql, createPage) => {
           reject(result.errors);
         }
 
+        const incidentReportsMap = {};
+
+        result.data.allMongodbAiidprodIncidents.group.map((g) => {
+          incidentReportsMap[g.fieldValue] = g.edges;
+        });
+
         // Create citation pages
         result.data.allMongodbAiidprodIncidents.distinct.forEach((incident_id) => {
           createPage({
             path: '/cite/' + incident_id,
             component: path.resolve('./src/templates/cite.js'),
             context: {
-              incident_id: parseInt(incident_id),
+              incidentReports: incidentReportsMap[incident_id],
             },
           });
         });

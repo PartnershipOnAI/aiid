@@ -19,7 +19,7 @@ const IncidentList = ({ group }) => {
             {value['edges'].map((value) => (
               <li key={value['node']['id']} className="d-flex">
                 <Date>{value['node']['date_published']}</Date>
-                <Link href={`${value['node']['url']}`}>{value['node']['title']}</Link>
+                <Link href={`#${value['node']['mongodb_id']}`}>{value['node']['title']}</Link>
               </li>
             ))}
           </ul>

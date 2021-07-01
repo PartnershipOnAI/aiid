@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
 import Helmet from 'react-helmet';
-import { graphql } from 'gatsby';
 
 import Button from 'react-bootstrap/Button';
 import Container from 'react-bootstrap/Container';
@@ -15,10 +14,10 @@ import BibTex from 'components/BibTex';
 
 import { getCanonicalUrl } from 'utils/getCanonicalUrl';
 
-import { InstantSearch, Configure } from 'react-instantsearch-dom';
-import { searchClient, Hits, IncidentStatsCard } from '../../pages/apps/discover';
+import { IncidentStatsCard, IncidentCard, NoResults } from '../../pages/apps/discover';
 import styled from 'styled-components';
 import { isAfter, isEqual } from 'date-fns';
+import { useModal, CustomModal } from '../../src/components/useModal';
 
 const HitsContainer = styled.div`
   display: grid;
@@ -55,32 +54,31 @@ const StatsContainer = styled.div`
   }
 `;
 
-const IncidentCite = ({ data, ...props }) => {
-  if (!data) {
+const IncidentCite = ({ ...props }) => {
+  if (!props?.pathContext?.incidentReports) {
     return null;
   }
 
   const {
-    allMongodbAiidprodIncidents: { group },
-  } = data;
-
-  const [hasScrolled, setHasScrolled] = useState(false);
+    pathContext: { incidentReports },
+  } = props;
 
   const scrollToIncidentCard = () => {
     if (props.location?.hash) {
       const incidentCard = document.getElementById(props.location?.hash?.split('#')[1]);
 
-      if (incidentCard && !hasScrolled) {
-        incidentCard.scrollIntoView();
-        setHasScrolled(true);
-      }
+      incidentCard.scrollIntoView();
     }
   };
 
-  // meta tags
-  const reports = group[0]['edges'];
+  useEffect(() => {
+    if (props.location?.hash?.split('#')[1]) {
+      scrollToIncidentCard();
+    }
+  }, []);
 
-  const incident_id = reports[0]['node']['incident_id'];
+  // meta tags
+  const incident_id = incidentReports[0].node.incident_id;
 
   const metaTitle = 'Incident ' + incident_id;
 
@@ -88,12 +86,10 @@ const IncidentCite = ({ data, ...props }) => {
 
   const canonicalUrl = getCanonicalUrl(incident_id);
 
-  const nodes = group[0]['edges'];
-
-  const sortIncidentsByDatePublished = (group) => {
+  const sortIncidentsByDatePublished = (incidentReports) => {
     return [
       {
-        edges: group[0].edges.sort((a, b) => {
+        edges: incidentReports.sort((a, b) => {
           const dateA = new Date(a.node.date_published);
 
           const dateB = new Date(b.node.date_published);
@@ -112,12 +108,70 @@ const IncidentCite = ({ data, ...props }) => {
     ];
   };
 
-  const sortedGroup = sortIncidentsByDatePublished(group);
+  const sortedGroup = sortIncidentsByDatePublished(incidentReports);
 
   const stats = {
-    incidentId: nodes[0].node.incident_id,
-    reportCount: nodes.length,
-    incidentDate: nodes[0].node.incident_date,
+    incidentId: incident_id,
+    reportCount: incidentReports.length,
+    incidentDate: incidentReports[0].node.incident_date,
+  };
+
+  const sortByDatePublished = (nodes) => {
+    const sortedHits = nodes.sort((a, b) => {
+      const dateA = new Date(a.node.date_published);
+
+      const dateB = new Date(b.node.date_published);
+
+      if (isEqual(dateA, dateB)) {
+        return 0;
+      }
+      if (isAfter(dateA, dateB)) {
+        return 1;
+      }
+      if (isAfter(dateB, dateA)) {
+        return -1;
+      }
+    });
+
+    return sortedHits;
+  };
+
+  const RenderIncidentCards = ({ nodes }) => {
+    const sortedHits = sortByDatePublished(nodes);
+
+    const authorsModal = useModal();
+
+    const submittersModal = useModal();
+
+    const flagReportModal = useModal();
+
+    if (sortedHits.length === 0) {
+      return (
+        <NoResults>
+          <p>Your search returned no results.</p>
+          <p>Please clear your search in the search box above or the filters.</p>
+        </NoResults>
+      );
+    }
+
+    return (
+      <>
+        {sortedHits.map((hit) => (
+          <IncidentCard
+            key={hit.node.objectID}
+            item={hit.node}
+            authorsModal={authorsModal}
+            submittersModal={submittersModal}
+            flagReportModal={flagReportModal}
+            showDetails={true}
+            isCitePage={true}
+          />
+        ))}
+        <CustomModal {...authorsModal} />
+        <CustomModal {...submittersModal} />
+        <CustomModal {...flagReportModal} />
+      </>
+    );
   };
 
   return (
@@ -137,68 +191,61 @@ const IncidentCite = ({ data, ...props }) => {
       </div>
       <CiteStyledMainWrapper>
         <Container>
-          <InstantSearch indexName="aiid-emergency" searchClient={searchClient}>
-            <Row>
-              <CardContainer className="card">
-                <div className="card-header">
-                  <h4>Suggested citation format</h4>
-                </div>
-                <div className="card-body">
-                  <Citation nodes={nodes} incident_id={incident_id} />
-                </div>
-              </CardContainer>
-            </Row>
-            <Row className="mb-4">
-              <StatsContainer>
-                <IncidentStatsCard {...stats} />
-              </StatsContainer>
-            </Row>
-            <Row className="mb-4">
-              <CardContainer className="card">
-                <div className="card-header">
-                  <h4>Reports</h4>
-                </div>
-                <div className="card-body">
-                  <IncidentList group={sortedGroup} />
-                </div>
-              </CardContainer>
-            </Row>
-            <Row className="mb-4">
-              <CardContainer className="card">
-                <div className="card-header">
-                  <h4>Tools</h4>
-                </div>
-                <div className="card-body">
-                  <Button variant="outline-primary" className="mr-2" href={'/summaries/incidents'}>
-                    All Incidents
-                  </Button>
-                  <Button
-                    variant="outline-primary"
-                    className="mr-2"
-                    href={'/apps/discover?incident_id=' + incident_id}
-                  >
-                    Discover
-                  </Button>
-                  <BibTex nodes={nodes} incident_id={incident_id} />
-                </div>
-              </CardContainer>
-            </Row>
-            <Row className="mb-4">
-              <CardContainer className="card">
-                <ImageCarousel nodes={nodes} />
-              </CardContainer>
-            </Row>
-            <Row className="mb-4">
-              <HitsContainer showDetails={true}>
-                <Hits
-                  showDetails={true}
-                  sortByDatePublished={true}
-                  scrollTo={() => scrollToIncidentCard()}
-                />
-              </HitsContainer>
-              <Configure filters={`incident_id:${incident_id}`} />
-            </Row>
-          </InstantSearch>
+          <Row>
+            <CardContainer className="card">
+              <div className="card-header">
+                <h4>Suggested citation format</h4>
+              </div>
+              <div className="card-body">
+                <Citation nodes={incidentReports} incident_id={incident_id} />
+              </div>
+            </CardContainer>
+          </Row>
+          <Row className="mb-4">
+            <StatsContainer>
+              <IncidentStatsCard {...stats} />
+            </StatsContainer>
+          </Row>
+          <Row className="mb-4">
+            <CardContainer className="card">
+              <div className="card-header">
+                <h4>Reports</h4>
+              </div>
+              <div className="card-body">
+                <IncidentList group={sortedGroup} />
+              </div>
+            </CardContainer>
+          </Row>
+          <Row className="mb-4">
+            <CardContainer className="card">
+              <div className="card-header">
+                <h4>Tools</h4>
+              </div>
+              <div className="card-body">
+                <Button variant="outline-primary" className="mr-2" href={'/summaries/incidents'}>
+                  All Incidents
+                </Button>
+                <Button
+                  variant="outline-primary"
+                  className="mr-2"
+                  href={'/apps/discover?incident_id=' + incident_id}
+                >
+                  Discover
+                </Button>
+                <BibTex nodes={incidentReports} incident_id={incident_id} />
+              </div>
+            </CardContainer>
+          </Row>
+          <Row className="mb-4">
+            <CardContainer className="card">
+              <ImageCarousel nodes={incidentReports} />
+            </CardContainer>
+          </Row>
+          <Row className="mb-4">
+            <HitsContainer showDetails={true}>
+              <RenderIncidentCards nodes={incidentReports} />
+            </HitsContainer>
+          </Row>
         </Container>
       </CiteStyledMainWrapper>
     </Layout>
@@ -206,43 +253,3 @@ const IncidentCite = ({ data, ...props }) => {
 };
 
 export default IncidentCite;
-
-export const pageQuery = graphql`
-  query($incident_id: Int!) {
-    site {
-      siteMetadata {
-        title
-        docsLocation
-      }
-    }
-    allMdx {
-      edges {
-        node {
-          fields {
-            slug
-            title
-          }
-        }
-      }
-    }
-    allMongodbAiidprodIncidents(filter: { incident_id: { eq: $incident_id } }) {
-      group(field: incident_id) {
-        edges {
-          node {
-            id
-            submitters
-            incident_date
-            date_published
-            incident_id
-            report_number
-            title
-            url
-            image_url
-            source_domain
-            mongodb_id
-          }
-        }
-      }
-    }
-  }
-`;
